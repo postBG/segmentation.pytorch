@@ -1,9 +1,32 @@
 import numpy as np
 import random
 
+from torch.utils.data import Dataset
 
-def generate_random_data(height, width, count):
-    x, y = zip(*[generate_img_and_mask(height, width) for i in range(0, count)])
+
+class SimDataset(Dataset):
+    def __init__(self, size, transform=None):
+        self.input_images, self.target_masks = generate_random_data(128, 128, size=size)
+        self.transform = transform
+
+    def __len__(self):
+        return len(self.input_images)
+
+    def __getitem__(self, idx):
+        image, mask = self.get_raw_item(idx)
+        if self.transform:
+            image = self.transform(image)
+
+        return image, mask
+
+    def get_raw_item(self, idx):
+        image = self.input_images[idx]
+        mask = self.target_masks[idx]
+        return image, mask
+
+
+def generate_random_data(height, width, size):
+    x, y = zip(*[generate_img_and_mask(height, width) for _ in range(0, size)])
 
     x = np.asarray(x) * 255
     x = x.repeat(3, axis=1).transpose([0, 2, 3, 1]).astype(np.uint8)
