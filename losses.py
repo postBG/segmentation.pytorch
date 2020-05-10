@@ -1,8 +1,8 @@
 import torch
 
 
-def dice_loss(pred: torch.Tensor, target: torch.Tensor, smooth=1.):
-    pred = pred.contiguous()
+def dice_loss(logits: torch.Tensor, target: torch.Tensor, smooth=1.):
+    pred = torch.softmax(logits, dim=1)
     target = target.contiguous()
 
     intersection = (pred * target).sum(dim=2).sum(dim=2)

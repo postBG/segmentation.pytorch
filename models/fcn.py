@@ -21,7 +21,6 @@ class FCN(nn.Module):
         self.upsample4 = nn.Upsample(scale_factor=32, mode='bilinear')
 
         self.conv1k = nn.Conv2d(64 + 128 + 256 + 512, n_class, 1)
-        self.sigmoid = nn.Sigmoid()
 
     def forward(self, x):
         x = self.layer1(x)
@@ -35,6 +34,5 @@ class FCN(nn.Module):
 
         merge = torch.cat([up1, up2, up3, up4], dim=1)
         merge = self.conv1k(merge)
-        out = self.sigmoid(merge)
 
-        return out
+        return merge
