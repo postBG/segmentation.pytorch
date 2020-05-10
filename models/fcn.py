@@ -1,9 +1,21 @@
-import torch
 import torch.nn as nn
 from torchvision import models
 
 
-class FCN(nn.Module):
+class Fusion(nn.Module):
+    def __init__(self, upper_channel_size, lower_channel_size):
+        super(Fusion, self).__init__()
+        self.conv = nn.Conv2d(upper_channel_size, lower_channel_size, kernel_size=1)
+        self.relu = nn.ReLU()
+
+    def forward(self, upper_feature_map, lower_feature_map):
+        out = self.conv(upper_feature_map) + lower_feature_map
+        out = self.relu(out)
+
+        return out
+
+
+class FCN4s(nn.Module):
 
     def __init__(self, n_class):
         super().__init__()
@@ -11,28 +23,34 @@ class FCN(nn.Module):
         self.base_model = models.resnet18(pretrained=True)
 
         layers = list(self.base_model.children())
-        self.layer1 = nn.Sequential(*layers[:5])  # size=(N, 64, x.H/2, x.W/2)
-        self.upsample1 = nn.Upsample(scale_factor=4, mode='bilinear')
-        self.layer2 = layers[5]  # size=(N, 128, x.H/4, x.W/4)
-        self.upsample2 = nn.Upsample(scale_factor=8, mode='bilinear')
-        self.layer3 = layers[6]  # size=(N, 256, x.H/8, x.W/8)
-        self.upsample3 = nn.Upsample(scale_factor=16, mode='bilinear')
-        self.layer4 = layers[7]  # size=(N, 512, x.H/16, x.W/16)
-        self.upsample4 = nn.Upsample(scale_factor=32, mode='bilinear')
+        self.layer1 = nn.Sequential(*layers[:5])  # size=(N, 64, x.H/4, x.W/4)
+        self.layer2 = layers[5]  # size=(N, 128, x.H/8, x.W/8)
+        self.layer3 = layers[6]  # size=(N, 256, x.H/16, x.W/16)
+        self.layer4 = layers[7]  # size=(N, 512, x.H/32, x.W/32)
 
-        self.conv1k = nn.Conv2d(64 + 128 + 256 + 512, n_class, 1)
+        self.upsample = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=False)
+
+        self.fuse_fm4_and_fm3 = Fusion(512, 256)
+        self.fuse_fm3_and_fm2 = Fusion(256, 128)
+        self.fuse_fm2_and_fm1 = Fusion(128, 64)
+
+        self.conv1k = nn.Conv2d(64, n_class, 1)
 
     def forward(self, x):
-        x = self.layer1(x)
-        up1 = self.upsample1(x)
-        x = self.layer2(x)
-        up2 = self.upsample2(x)
-        x = self.layer3(x)
-        up3 = self.upsample3(x)
-        x = self.layer4(x)
-        up4 = self.upsample4(x)
+        fm1 = self.layer1(x)  # size=(N, 64, x.H/4, x.W/4)
+        fm2 = self.layer2(fm1)  # size=(N, 128, x.H/8, x.W/8)
+        fm3 = self.layer3(fm2)  # size=(N, 256, x.H/16, x.W/16)
+        fm4 = self.layer4(fm3)  # size=(N, 512, x.H/32, x.W/32)
 
-        merge = torch.cat([up1, up2, up3, up4], dim=1)
-        merge = self.conv1k(merge)
+        up4 = self.upsample(fm4)  # size=(N, 512, x.H/16, x.W/16)
+        fs43 = self.fuse_fm4_and_fm3(up4, fm3)  # size=(N, 256, x.H/16, x.W/16)
 
-        return merge
+        up3 = self.upsample(fs43)  # size=(N, 256, x.H/8, x.W/8)
+        fs32 = self.fuse_fm3_and_fm2(up3, fm2)  # size=(N, 128, x.H/8, x.W/8)
+
+        up2 = self.upsample(fs32)  # size=(N, 128, x.H/4, x.W/4)
+        fs21 = self.fuse_fm2_and_fm1(up2, fm1)  # size=(N, 64, x.H/4, x.W/4)
+
+        up1 = self.upsample(fs21)  # size=(N, 64, x.H/2, x.W/2)
+        up1 = self.upsample(up1)  # size=(N, 64, x.H, x.W)
+        return self.conv1k(up1)
