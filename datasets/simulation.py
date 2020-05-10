@@ -16,9 +16,8 @@ def generate_img_and_mask(height, width):
     shape = (height, width)
 
     triangle_location = get_random_location(*shape)
-    circle_location1 = get_random_location(*shape, zoom=0.7)
-    circle_location2 = get_random_location(*shape, zoom=0.5)
-    mesh_location = get_random_location(*shape)
+    circle_location1 = get_random_location(*shape, zoom=0.8)
+    circle_location2 = get_random_location(*shape, zoom=0.9)
     square_location = get_random_location(*shape, zoom=0.8)
     plus_location = get_random_location(*shape, zoom=1.2)
 
@@ -27,7 +26,6 @@ def generate_img_and_mask(height, width):
     arr = add_triangle(arr, *triangle_location)
     arr = add_circle(arr, *circle_location1)
     arr = add_circle(arr, *circle_location2, fill=True)
-    arr = add_mesh_square(arr, *mesh_location)
     arr = add_filled_square(arr, *square_location)
     arr = add_plus(arr, *plus_location)
     arr = np.reshape(arr, (1, height, width)).astype(np.float32)
@@ -38,8 +36,6 @@ def generate_img_and_mask(height, width):
         add_circle(np.zeros(shape, dtype=bool), *circle_location2, fill=True),
         add_triangle(np.zeros(shape, dtype=bool), *triangle_location),
         add_circle(np.zeros(shape, dtype=bool), *circle_location1),
-        add_filled_square(np.zeros(shape, dtype=bool), *mesh_location),
-        # add_mesh_square(np.zeros(shape, dtype=bool), *mesh_location),
         add_plus(np.zeros(shape, dtype=bool), *plus_location)
     ]).astype(np.float32)
 
@@ -110,6 +106,6 @@ def get_random_location(width, height, zoom=1.0):
     x = int(width * random.uniform(0.1, 0.9))
     y = int(height * random.uniform(0.1, 0.9))
 
-    size = int(min(width, height) * random.uniform(0.06, 0.12) * zoom)
+    size = int(min(width, height) * random.uniform(0.08, 0.12) * zoom)
 
     return x, y, size
