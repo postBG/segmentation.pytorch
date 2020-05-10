@@ -4,7 +4,7 @@ from torchvision import models
 
 class Fusion(nn.Module):
     def __init__(self, upper_channel_size, lower_channel_size):
-        super(Fusion, self).__init__()
+        super().__init__()
         self.conv = nn.Conv2d(upper_channel_size, lower_channel_size, kernel_size=1)
         self.relu = nn.ReLU()
 

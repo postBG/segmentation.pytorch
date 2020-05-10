@@ -9,7 +9,7 @@ from metric import AverageMeterSet
 
 
 def print_metrics(phase, average_meter_set: AverageMeterSet):
-    results = ["{}: {:4f}".format(k, v) for k, v in average_meter_set.averages()]
+    results = ["{}: {:4f}".format(k, v) for k, v in average_meter_set.averages().items()]
     print("{}: {}".format(phase, ", ".join(results)))
 
 
@@ -63,6 +63,7 @@ def validate(model, dataloader, device, bce_weight=0.5):
 
 
 def train_model(model, dataloaders, optimizer, lr_scheduler, device, bce_weight=0.5, num_epochs=25):
+    model = model.to(device)
     best_model_wts = copy.deepcopy(model.state_dict())
     best_loss = 1e10
 
