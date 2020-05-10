@@ -1,7 +1,7 @@
 import torch
 
 
-def dice_loss(logits: torch.Tensor, target: torch.Tensor, smooth=1.):
+def dice_loss_with_logits(logits: torch.Tensor, target: torch.Tensor, smooth=1.):
     pred = torch.softmax(logits, dim=1)
     target = target.contiguous()
 

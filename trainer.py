@@ -1,35 +1,68 @@
 import copy
 import time
-from collections import defaultdict
 
 import torch
 import torch.nn.functional as F
 
-from losses import dice_loss
+from losses import dice_loss_with_logits
+from metric import AverageMeterSet
 
 
-def calc_loss(logits, targets, metrics, bce_weight=0.5):
-    bce = F.binary_cross_entropy_with_logits(logits, targets)
-    dice = dice_loss(logits, targets)
-
-    loss = bce * bce_weight + dice * (1 - bce_weight)
-
-    metrics['bce'] += bce.data.cpu().numpy() * targets.size(0)
-    metrics['dice'] += dice.data.cpu().numpy() * targets.size(0)
-    metrics['loss'] += loss.data.cpu().numpy() * targets.size(0)
-
-    return loss
+def print_metrics(phase, average_meter_set: AverageMeterSet):
+    results = ["{}: {:4f}".format(k, v) for k, v in average_meter_set.averages()]
+    print("{}: {}".format(phase, ", ".join(results)))
 
 
-def print_metrics(metrics, epoch_samples, phase):
-    outputs = []
-    for k in metrics.keys():
-        outputs.append("{}: {:4f}".format(k, metrics[k] / epoch_samples))
+def train_one_epoch(model, dataloader, optimizer, device, bce_weight=0.5):
+    average_meter_set = AverageMeterSet()
+    for inputs, labels in dataloader:
+        inputs = inputs.to(device)
+        targets = labels.to(device)
 
-    print("{}: {}".format(phase, ", ".join(outputs)))
+        # zero the parameter gradients
+        optimizer.zero_grad()
+
+        # forward
+        # track history if only in train
+        logits = model(inputs)
+
+        bce_loss = F.binary_cross_entropy_with_logits(logits, targets)
+        dice_loss = dice_loss_with_logits(logits, targets)
+
+        loss = bce_loss * bce_weight + dice_loss * (1 - bce_weight)
+
+        loss.backward()
+        optimizer.step()
+
+        average_meter_set.update('bce_loss', bce_loss.item())
+        average_meter_set.update('dice_loss', dice_loss.item())
+        average_meter_set.update('loss', loss.item())
+
+    return average_meter_set, model
 
 
-def train_model(model, optimizer, scheduler, num_epochs=25):
+def validate(model, dataloader, device, bce_weight=0.5):
+    average_meter_set = AverageMeterSet()
+    with torch.no_grad():
+        for inputs, labels in dataloader:
+            inputs = inputs.to(device)
+            targets = labels.to(device)
+
+            logits = model(inputs)
+
+            bce_loss = F.binary_cross_entropy_with_logits(logits, targets)
+            dice_loss = dice_loss_with_logits(logits, targets)
+
+            loss = bce_loss * bce_weight + dice_loss * (1 - bce_weight)
+
+            average_meter_set.update('bce_loss', bce_loss.item())
+            average_meter_set.update('dice_loss', dice_loss.item())
+            average_meter_set.update('loss', loss.item())
+
+    return average_meter_set
+
+
+def train_model(model, dataloaders, optimizer, lr_scheduler, device, bce_weight=0.5, num_epochs=25):
     best_model_wts = copy.deepcopy(model.state_dict())
     best_loss = 1e10
 
@@ -45,42 +78,19 @@ def train_model(model, optimizer, scheduler, num_epochs=25):
                 model.train()  # Set model to training mode
                 for param_group in optimizer.param_groups:
                     print("LR", param_group['lr'])
-                scheduler.step()
+                average_meter_set, model = train_one_epoch(model, dataloaders[phase], optimizer, device, bce_weight)
+                print_metrics(phase, average_meter_set)
+                lr_scheduler.step()
             else:
                 model.eval()  # Set model to evaluate mode
+                average_meter_set = validate(model, dataloaders[phase], device, bce_weight)
+                print_metrics(phase, average_meter_set)
+                epoch_loss = average_meter_set.averages()['loss']
 
-            metrics = defaultdict(float)
-            epoch_samples = 0
-
-            for inputs, labels in dataloaders[phase]:
-                inputs = inputs.to(device)
-                labels = labels.to(device)
-
-                # zero the parameter gradients
-                optimizer.zero_grad()
-
-                # forward
-                # track history if only in train
-                with torch.set_grad_enabled(phase == 'train'):
-                    outputs = model(inputs)
-                    loss = calc_loss(outputs, labels, metrics)
-
-                    # backward + optimize only if in training phase
-                    if phase == 'train':
-                        loss.backward()
-                        optimizer.step()
-
-                # statistics
-                epoch_samples += inputs.size(0)
-
-            print_metrics(metrics, epoch_samples, phase)
-            epoch_loss = metrics['loss'] / epoch_samples
-
-            # deep copy the model
-            if phase == 'val' and epoch_loss < best_loss:
-                print("saving best model")
-                best_loss = epoch_loss
-                best_model_wts = copy.deepcopy(model.state_dict())
+                if epoch_loss < best_loss:
+                    print("Saving the Best Model")
+                    best_loss = epoch_loss
+                    best_model_wts = copy.deepcopy(model.state_dict())
 
         time_elapsed = time.time() - since
         print('{:.0f}m {:.0f}s'.format(time_elapsed // 60, time_elapsed % 60))
